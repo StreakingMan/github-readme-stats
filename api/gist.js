@@ -1,60 +1,37 @@
-import { renderStatsCard } from "../src/cards/stats-card.js";
-import { blacklist } from "../src/common/blacklist.js";
 import {
   clampValue,
   CONSTANTS,
-  parseArray,
-  parseBoolean,
   renderError,
+  parseBoolean,
 } from "../src/common/utils.js";
-import { fetchStats } from "../src/fetchers/stats-fetcher.js";
 import { isLocaleAvailable } from "../src/translations.js";
+import { renderGistCard } from "../src/cards/gist-card.js";
+import { fetchGist } from "../src/fetchers/gist-fetcher.js";
 
 export default async (req, res) => {
   const {
-    username,
-    hide,
-    hide_title,
-    hide_border,
-    card_width,
-    hide_rank,
-    show_icons,
-    include_all_commits,
-    line_height,
+    id,
     title_color,
-    ring_color,
     icon_color,
     text_color,
-    text_bold,
     bg_color,
     theme,
     cache_seconds,
-    exclude_repo,
-    custom_title,
     locale,
-    disable_animations,
     border_radius,
-    number_format,
     border_color,
-    rank_icon,
-    show,
+    show_owner,
+    hide_border,
   } = req.query;
-  res.setHeader("Content-Type", "image/svg+xml");
 
-  if (blacklist.includes(username)) {
-    return res.send(renderError("Something went wrong"));
-  }
+  res.setHeader("Content-Type", "image/svg+xml");
 
   if (locale && !isLocaleAvailable(locale)) {
     return res.send(renderError("Something went wrong", "Language not found"));
   }
 
   try {
-    const stats = await fetchStats(
-      username,
-      parseBoolean(include_all_commits),
-      parseArray(exclude_repo),
-    );
+    const gistData = await fetchGist(id);
 
     let cacheSeconds = clampValue(
       parseInt(cache_seconds || CONSTANTS.FOUR_HOURS, 10),
@@ -65,6 +42,19 @@ export default async (req, res) => {
       ? parseInt(process.env.CACHE_SECONDS, 10) || cacheSeconds
       : cacheSeconds;
 
+    /*
+      if star count & fork count is over 1k then we are kFormating the text
+      and if both are zero we are not showing the stats
+      so we can just make the cache longer, since there is no need to frequent updates
+    */
+    const stars = gistData.starsCount;
+    const forks = gistData.forksCount;
+    const isBothOver1K = stars > 1000 && forks > 1000;
+    const isBothUnder1 = stars < 1 && forks < 1;
+    if (!cache_seconds && (isBothOver1K || isBothUnder1)) {
+      cacheSeconds = CONSTANTS.FOUR_HOURS;
+    }
+
     res.setHeader(
       "Cache-Control",
       `max-age=${
@@ -73,30 +63,17 @@ export default async (req, res) => {
     );
 
     return res.send(
-      renderStatsCard(stats, {
-        hide: parseArray(hide),
-        show_icons: parseBoolean(show_icons),
-        hide_title: parseBoolean(hide_title),
-        hide_border: parseBoolean(hide_border),
-        card_width: parseInt(card_width, 10),
-        hide_rank: parseBoolean(hide_rank),
-        include_all_commits: parseBoolean(include_all_commits),
-        line_height,
+      renderGistCard(gistData, {
         title_color,
-        ring_color,
         icon_color,
         text_color,
-        text_bold: parseBoolean(text_bold),
         bg_color,
         theme,
-        custom_title,
         border_radius,
         border_color,
-        number_format,
         locale: locale ? locale.toLowerCase() : null,
-        disable_animations: parseBoolean(disable_animations),
-        rank_icon,
-        show: parseArray(show),
+        show_owner: parseBoolean(show_owner),
+        hide_border: parseBoolean(hide_border),
       }),
     );
   } catch (err) {
